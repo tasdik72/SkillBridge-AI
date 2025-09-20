@@ -11,9 +11,7 @@ const PublicLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-green-600 to-teal-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">SB</span>
-              </div>
+              <img src="/logo.svg" alt="SkillBridge AI Logo" className="h-8 w-auto" />
               <span className="font-bold text-xl text-gray-900">SkillBridge AI</span>
             </Link>
 
