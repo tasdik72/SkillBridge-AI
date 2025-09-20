@@ -171,8 +171,48 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const updateMentorshipRequest = async (requestId: string, status: 'accepted' | 'rejected') => {
     if (!user) throw new Error('User not authenticated');
-    const { error } = await supabase.from('mentorship_requests').update({ status }).eq('id', requestId);
-    if (error) throw error;
+
+    const { data: updatedRequest, error: updateError } = await supabase
+      .from('mentorship_requests')
+      .update({ status })
+      .eq('id', requestId)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    if (status === 'accepted' && updatedRequest) {
+      const learnerId = updatedRequest.learner_id;
+      const mentorId = updatedRequest.mentor_id;
+
+      try {
+        const { data: existingConversations, error: rpcError } = await supabase.rpc('get_conversation_between_users', {
+          user1_id: learnerId,
+          user2_id: mentorId,
+        });
+
+        if (rpcError) throw rpcError;
+
+        if (!existingConversations || existingConversations.length === 0) {
+          const { data: newConversation, error: convoError } = await supabase
+            .from('conversations')
+            .insert({})
+            .select()
+            .single();
+
+          if (convoError) throw convoError;
+
+          const { error: participantsError } = await supabase.from('conversation_participants').insert([
+            { conversation_id: newConversation.id, user_id: learnerId },
+            { conversation_id: newConversation.id, user_id: mentorId },
+          ]);
+
+          if (participantsError) throw participantsError;
+        }
+      } catch (error) {
+        console.error('Error creating conversation after accepting request:', error);
+      }
+    }
   };
 
   return (

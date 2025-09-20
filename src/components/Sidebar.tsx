@@ -20,7 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen }) => {
 
   const studentNavItems = [
     ...baseNavItems,
-    { path: '/mentorship', icon: MessageSquare, label: 'Find Mentors' },
+    { path: '/mentorship', icon: Briefcase, label: 'Find Mentors' },
+    { path: '/talk', icon: MessageSquare, label: 'Talk' },
     { path: '/wallet', icon: Wallet, label: 'Wallet' },
     { path: '/wellness', icon: Heart, label: 'Wellness' },
   ];
@@ -28,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const mentorNavItems = [
     ...baseNavItems,
     { path: '/student-requests', icon: Briefcase, label: 'Student Requests' },
+    { path: '/talk', icon: MessageSquare, label: 'Talk' },
     { path: '/wallet', icon: Wallet, label: 'Wallet' },
     { path: '/wellness', icon: Heart, label: 'Wellness' },
   ];

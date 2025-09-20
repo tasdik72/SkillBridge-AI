@@ -20,6 +20,7 @@ import About from './pages/About';
 import Terms from './pages/Terms';
 import StudentRequests from './pages/StudentRequests';
 import ResetPassword from './pages/ResetPassword';
+import Talk from './pages/Talk';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
@@ -58,7 +59,8 @@ function AppRoutes() {
         <Route path="/profile" element={<ProtectedRoute><MainLayout><Profile /></MainLayout></ProtectedRoute>} />
         <Route path="/wellness" element={<ProtectedRoute><MainLayout><Wellness /></MainLayout></ProtectedRoute>} />
         <Route path="/mentorship" element={<ProtectedRoute><MainLayout><Mentorship /></MainLayout></ProtectedRoute>} />
-        <Route path="/student-requests" element={<ProtectedRoute><MainLayout><StudentRequests /></MainLayout></ProtectedRoute>} />
+                <Route path="/student-requests" element={<ProtectedRoute><MainLayout><StudentRequests /></MainLayout></ProtectedRoute>} />
+                <Route path="/talk/:id?" element={<ProtectedRoute><MainLayout><Talk /></MainLayout></ProtectedRoute>} />
       </Routes>
       <Toaster />
     </>
