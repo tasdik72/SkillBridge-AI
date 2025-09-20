@@ -44,50 +44,97 @@ const Talk = () => {
 
   const fetchConversations = async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('conversations')
-      .select('id, last_message_at, conversation_participants!inner(user_id, profiles(id, full_name, avatar_url))')
-      .eq('conversation_participants.user_id', user.id)
-      .order('last_message_at', { ascending: false, nullsFirst: false });
 
-    if (error) {
-      console.error('Error fetching conversations:', error);
-    } else {
-      setConversations(data || []);
+    try {
+      const { data, error } = await supabase
+        .from('conversation_participants')
+        .select(`
+          conversation_id,
+          conversations!inner(id, created_at, last_message_at),
+          profiles!inner(id, name, username, avatar_url)
+        `)
+        .eq('user_id', user.id)
+        .order('conversations[0].last_message_at', { ascending: false, nullsFirst: false });
+
+      if (error) {
+        console.error('Error fetching conversations:', error);
+        setConversations([]);
+        return;
+      }
+
+      // Transform the data to group by conversation
+      const conversationsMap = new Map();
+      data?.forEach((participant) => {
+        const convId = participant.conversation_id;
+        if (!conversationsMap.has(convId)) {
+          conversationsMap.set(convId, {
+            id: convId,
+            created_at: participant.conversations?.[0]?.created_at || null,
+            last_message_at: participant.conversations?.[0]?.last_message_at || null,
+            conversation_participants: data.filter(p => p.conversation_id === convId)
+          });
+        }
+      });
+
+      const conversations = Array.from(conversationsMap.values());
+      setConversations(conversations);
+
+      // If no conversations exist, create a welcome message
+      if (conversations.length === 0) {
+        console.log('No conversations found, user can start new ones');
+      }
+
+    } catch (error) {
+      console.error('Exception fetching conversations:', error);
+      setConversations([]);
     }
   };
 
   const fetchMessages = async () => {
     if (!selectedConversation) return;
 
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*, profiles(*)')
-      .eq('conversation_id', selectedConversation.id)
-      .order('created_at', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*, profiles(*)')
+        .eq('conversation_id', selectedConversation.id)
+        .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching messages:', error);
-    } else {
+      if (error) {
+        console.error('Error fetching messages:', error);
+        setMessages([]);
+        return;
+      }
+
       setMessages(data || []);
+    } catch (error) {
+      console.error('Exception fetching messages:', error);
+      setMessages([]);
     }
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation) return;
+    if (!newMessage.trim() || !selectedConversation || !user) return;
 
-    const { error } = await supabase.from('messages').insert([
-      {
-        conversation_id: selectedConversation.id,
-        sender_id: user?.id,
-        content: newMessage.trim(),
-      },
-    ]);
+    try {
+      const { error } = await supabase.from('messages').insert([
+        {
+          conversation_id: selectedConversation.id,
+          sender_id: user.id,
+          content: newMessage.trim(),
+        },
+      ]);
 
-    if (error) {
-      console.error('Error sending message:', error);
-    } else {
+      if (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message. Please try again.');
+        return;
+      }
+
       setNewMessage('');
+    } catch (error) {
+      console.error('Exception sending message:', error);
+      alert('Failed to send message. Please try again.');
     }
   };
 
@@ -109,7 +156,7 @@ const Talk = () => {
                 <p className="font-semibold">
                   {convo.conversation_participants
                     .filter((p: any) => p.profiles.id !== user?.id)
-                    .map((p: any) => p.profiles.full_name)
+                    .map((p: any) => p.profiles.name || p.profiles.username)
                     .join(', ')}
                 </p>
               </div>
@@ -130,7 +177,7 @@ const Talk = () => {
               <h2 className="text-xl font-semibold">
                 {selectedConversation.conversation_participants
                   .filter((p: any) => p.profiles.id !== user?.id)
-                  .map((p: any) => p.profiles.full_name)
+                  .map((p: any) => p.profiles.name || p.profiles.username)
                   .join(', ')}
               </h2>
             </div>
@@ -139,7 +186,7 @@ const Talk = () => {
                 <div key={msg.id} className={`mb-4 ${msg.sender_id === user?.id ? 'text-right' : ''}`}>
                   <div
                     className={`inline-block p-2 rounded-lg ${msg.sender_id === user?.id ? 'bg-green-600 text-white' : 'bg-gray-200'}`}>
-                    <p className="font-semibold">{msg.profiles.full_name}</p>
+                    <p className="font-semibold">{msg.profiles.name || msg.profiles.username}</p>
                     <p>{msg.content}</p>
                     <p className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString()}</p>
                   </div>

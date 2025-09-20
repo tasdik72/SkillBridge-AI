@@ -123,7 +123,7 @@ CREATE TABLE public.mentorship_requests (
   message TEXT,
   status TEXT NOT NULL DEFAULT 'pending', -- pending, accepted, rejected
   created_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT unique_pending_request UNIQUE (learner_id, mentor_id, status)
+  CONSTRAINT unique_active_request UNIQUE (learner_id, mentor_id, status)
 );
 
 -- Mentorship Requests RLS
@@ -136,7 +136,7 @@ CREATE POLICY "All users can view likes." ON public.likes FOR SELECT USING (true
 CREATE POLICY "Authenticated users can like posts." ON public.likes FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Users can unlike posts." ON public.likes FOR DELETE USING (auth.uid() = user_id);
 
--- Step 3: Create Functions and Triggers
+-- Step 4: Create Functions and Triggers
 
 -- Function to handle new user signup and create a profile
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -215,7 +215,148 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Create conversations table
+CREATE TABLE public.conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_message_at TIMESTAMPTZ
+);
+
+-- Create conversation_participants table
+CREATE TABLE public.conversation_participants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (conversation_id, user_id)
+);
+
+-- Create messages table
+CREATE TABLE public.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Enable Row Level Security for conversation tables
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for conversations
+CREATE POLICY "Users can view conversations they are a part of" ON public.conversations
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1
+    FROM conversation_participants
+    WHERE conversation_participants.conversation_id = conversations.id
+      AND conversation_participants.user_id = auth.uid()
+  )
+);
+
+CREATE POLICY "Users can create conversations" ON public.conversations
+FOR INSERT WITH CHECK (true);
+
+-- RLS Policies for conversation_participants
+CREATE POLICY "Users can view participants of their conversations" ON public.conversation_participants
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1
+    FROM conversation_participants cp
+    WHERE cp.conversation_id = conversation_participants.conversation_id
+      AND cp.user_id = auth.uid()
+  )
+);
+
+CREATE POLICY "Users can add themselves to conversations" ON public.conversation_participants
+FOR INSERT WITH CHECK (user_id = auth.uid());
+
+-- RLS Policies for messages
+CREATE POLICY "Users can view messages in their conversations" ON public.messages
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1
+    FROM conversation_participants
+    WHERE conversation_participants.conversation_id = messages.conversation_id
+      AND conversation_participants.user_id = auth.uid()
+  )
+);
+
+CREATE POLICY "Users can send messages in their conversations" ON public.messages
+FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM conversation_participants
+    WHERE conversation_participants.conversation_id = messages.conversation_id
+      AND conversation_participants.user_id = auth.uid()
+  )
+  AND sender_id = auth.uid()
+);
+
+-- Function to update last_message_at on new message
+CREATE OR REPLACE FUNCTION update_last_message_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE conversations
+  SET last_message_at = NEW.created_at
+  WHERE id = NEW.conversation_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to update last_message_at
+CREATE TRIGGER on_new_message
+  AFTER INSERT ON messages
+  FOR EACH ROW
+  EXECUTE FUNCTION update_last_message_at();
+
+-- Function to get conversation between two users
+CREATE OR REPLACE FUNCTION get_conversation_between_users(user1_id uuid, user2_id uuid)
+RETURNS TABLE(id uuid, created_at timestamptz, last_message_at timestamptz) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT c.id, c.created_at, c.last_message_at
+  FROM conversations c
+  JOIN conversation_participants cp1 ON c.id = cp1.conversation_id
+  JOIN conversation_participants cp2 ON c.id = cp2.conversation_id
+  WHERE cp1.user_id = user1_id AND cp2.user_id = user2_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to create conversation if it doesn't exist
+CREATE OR REPLACE FUNCTION create_conversation_if_not_exists(p_user1_id uuid, p_user2_id uuid)
+RETURNS void AS $$
+DECLARE
+    v_conversation_id uuid;
+BEGIN
+    -- More robustly find a conversation with exactly these two participants
+    SELECT c.id INTO v_conversation_id
+    FROM conversations c
+    WHERE (
+        SELECT count(cp.user_id)
+        FROM conversation_participants cp
+        WHERE cp.conversation_id = c.id AND (cp.user_id = p_user1_id OR cp.user_id = p_user2_id)
+    ) = 2
+    AND (
+        SELECT count(cp.user_id)
+        FROM conversation_participants cp
+        WHERE cp.conversation_id = c.id
+    ) = 2
+    LIMIT 1;
+
+    -- If no conversation exists, create one
+    IF v_conversation_id IS NULL THEN
+        INSERT INTO conversations (id) VALUES (gen_random_uuid()) RETURNING id INTO v_conversation_id;
+
+        INSERT INTO conversation_participants (conversation_id, user_id)
+        VALUES (v_conversation_id, p_user1_id), (v_conversation_id, p_user2_id);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Step 4: Enable Realtime
 
 -- Enable realtime on all tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles, public.roadmaps, public.transactions, public.community_posts, public.comments, public.likes;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles, public.roadmaps, public.transactions, public.community_posts, public.comments, public.likes, public.conversations, public.conversation_participants, public.messages;

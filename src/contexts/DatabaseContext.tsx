@@ -165,53 +165,72 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const sendMentorshipRequest = async (mentorId: string, message: string) => {
     if (!user) throw new Error('User not authenticated');
-    const { error } = await supabase.from('mentorship_requests').insert({ learner_id: user.id, mentor_id: mentorId, message });
+
+    // Prevent duplicates: if there's already a pending or accepted request, block
+    const { data: existing, error: checkErr } = await supabase
+      .from('mentorship_requests')
+      .select('id,status')
+      .eq('learner_id', user.id)
+      .eq('mentor_id', mentorId)
+      .in('status', ['pending', 'accepted']);
+
+    if (checkErr) throw checkErr;
+    if (existing && existing.length > 0) {
+      throw new Error('You already have a pending or accepted request with this mentor.');
+    }
+
+    const { error } = await supabase
+      .from('mentorship_requests')
+      .insert({ learner_id: user.id, mentor_id: mentorId, message });
     if (error) throw error;
   };
 
   const updateMentorshipRequest = async (requestId: string, status: 'accepted' | 'rejected') => {
     if (!user) throw new Error('User not authenticated');
 
-    const { data: updatedRequest, error: updateError } = await supabase
-      .from('mentorship_requests')
-      .update({ status })
-      .eq('id', requestId)
-      .select()
-      .single();
+    try {
+      const { data: updatedRequest, error: updateError } = await supabase
+        .from('mentorship_requests')
+        .update({ status })
+        .eq('id', requestId)
+        .select()
+        .single();
 
-    if (updateError) throw updateError;
-
-    if (status === 'accepted' && updatedRequest) {
-      const learnerId = updatedRequest.learner_id;
-      const mentorId = updatedRequest.mentor_id;
-
-      try {
-        const { data: existingConversations, error: rpcError } = await supabase.rpc('get_conversation_between_users', {
-          user1_id: learnerId,
-          user2_id: mentorId,
-        });
-
-        if (rpcError) throw rpcError;
-
-        if (!existingConversations || existingConversations.length === 0) {
-          const { data: newConversation, error: convoError } = await supabase
-            .from('conversations')
-            .insert({})
-            .select()
-            .single();
-
-          if (convoError) throw convoError;
-
-          const { error: participantsError } = await supabase.from('conversation_participants').insert([
-            { conversation_id: newConversation.id, user_id: learnerId },
-            { conversation_id: newConversation.id, user_id: mentorId },
-          ]);
-
-          if (participantsError) throw participantsError;
-        }
-      } catch (error) {
-        console.error('Error creating conversation after accepting request:', error);
+      if (updateError) {
+        throw updateError;
       }
+
+      // Manually update the local state to reflect the change immediately
+      setMentorshipRequests(prevRequests =>
+        prevRequests.map(req =>
+          req.id === requestId ? { ...req, status } : req
+        )
+      );
+
+      if (status === 'accepted' && updatedRequest) {
+        const learnerId = updatedRequest.learner_id;
+        const mentorId = updatedRequest.mentor_id;
+
+        // Create conversation between learner and mentor
+        try {
+          const { error: rpcError } = await supabase.rpc('create_conversation_if_not_exists', {
+            p_user1_id: learnerId,
+            p_user2_id: mentorId
+          });
+
+          if (rpcError) {
+            console.error('Error creating conversation for accepted mentorship request:', rpcError);
+            // Don't throw here - the request acceptance was successful, conversation creation failure shouldn't block it
+          } else {
+            console.log('Successfully created conversation for accepted mentorship request');
+          }
+        } catch (error) {
+          console.error('Exception while creating conversation:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating mentorship request:', error);
+      throw error; // Re-throw to allow UI to handle it if needed
     }
   };
 

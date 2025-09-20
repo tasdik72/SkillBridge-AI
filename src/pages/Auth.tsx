@@ -35,15 +35,15 @@ const Auth = () => {
     try {
       if (isLogin) {
         await login(formData.email, formData.password);
+        navigate('/dashboard');
       } else {
         await signup({
           ...formData,
           skills: formData.skills.split(',').map(s => s.trim()).filter(s => s)
         });
         // If email confirmation is enabled, there will be no active session yet.
-        navigate('/', { state: { message: "Signup successful! We've sent a confirmation link to your email. Please check your inbox to complete your signup." } });
+        setInfo("Signup successful! We've sent a confirmation link to your email. Please check your inbox to complete your signup.");
       }
-      navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {

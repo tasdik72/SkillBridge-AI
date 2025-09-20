@@ -5,6 +5,7 @@ import { useDatabase } from '../contexts/DatabaseContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import Certificate from '../components/Certificate';
+import { deleteCurrentUser } from '../services/account';
 import { 
   Award, 
   Edit, 
@@ -52,7 +53,16 @@ const [profileData, setProfileData] = useState<ProfileData>({
     avatar_url: '',
   });
   const [account, setAccount] = useState({ newEmail: '', newPassword: '', confirmPassword: '' });
-  const [certificateData, setCertificateData] = useState<{ studentName: string; courseName: string; completionDate: string; } | null>(null);
+  const [certificateData, setCertificateData] = useState<{
+    studentName: string;
+    courseName: string;
+    completionDate: string;
+    certificateType?: 'achievement' | 'completion' | 'excellence' | 'mastery';
+    additionalInfo?: string;
+    issuer?: string;
+    signature?: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (certificateData) {
@@ -60,8 +70,8 @@ const [profileData, setProfileData] = useState<ProfileData>({
       if (certificateElement) {
         html2canvas(certificateElement, { scale: 2 }).then((canvas) => {
           const imgData = canvas.toDataURL('image/png');
-          const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [800, 600] });
-          pdf.addImage(imgData, 'PNG', 0, 0, 800, 600);
+          const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [900, 650] });
+          pdf.addImage(imgData, 'PNG', 0, 0, 900, 650);
           pdf.save(`SkillBridge_Certificate_${certificateData.courseName.replace(/\s/g, '_')}.pdf`);
           setCertificateData(null); // Clean up
         });
@@ -127,17 +137,57 @@ const [profileData, setProfileData] = useState<ProfileData>({
   ];
 
   const handleDownloadCertificate = async () => {
-    const completedRoadmap = completedRoadmaps[0];
-    if (!completedRoadmap || !user) {
-      alert('No completed roadmaps to generate a certificate for!');
-      return;
+    // Generate a certificate based on user achievements
+    let certificateType: 'achievement' | 'completion' | 'excellence' | 'mastery' = 'achievement';
+    let courseName = 'Learning Achievement Certificate';
+    let additionalInfo = '';
+
+    if (completedRoadmaps.length > 0) {
+      certificateType = 'completion';
+      courseName = completedRoadmaps[0].title;
+      additionalInfo = `Successfully completed ${completedRoadmaps.length} learning path${completedRoadmaps.length > 1 ? 's' : ''}`;
+    } else if (totalMilestones >= 10) {
+      certificateType = 'mastery';
+      courseName = 'Learning Mastery Certificate';
+      additionalInfo = `Mastered ${totalMilestones} milestones across various learning paths`;
+    } else if (totalMilestones >= 5) {
+      certificateType = 'excellence';
+      courseName = 'Learning Excellence Certificate';
+      additionalInfo = `Demonstrated excellence by completing ${totalMilestones} milestones`;
+    } else {
+      certificateType = 'achievement';
+      courseName = 'Learning Achievement Certificate';
+      additionalInfo = 'Taking the first steps in your learning journey with SkillBridge AI';
     }
 
     setCertificateData({
-      studentName: user.name || 'Student',
-      courseName: completedRoadmap.title,
+      studentName: user?.name || 'Student',
+      courseName,
       completionDate: new Date().toLocaleDateString(),
+      certificateType,
+      additionalInfo,
+      issuer: 'SkillBridge AI',
+      signature: 'Dr. Sarah Chen'
     });
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    const ok = window.confirm('Are you sure you want to permanently delete your account? This action cannot be undone.');
+    if (!ok) return;
+    setInfo('');
+    setError('');
+    setDeleting(true);
+    try {
+      await deleteCurrentUser(user.id);
+      // Best effort sign-out and hard redirect to landing
+      await supabase.auth.signOut();
+      window.location.href = '/';
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete account.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const stats = [
@@ -685,12 +735,14 @@ const [profileData, setProfileData] = useState<ProfileData>({
               </button>
               <button
                 onClick={handleDownloadCertificate}
-                disabled={completedRoadmaps.length === 0}
-                className="w-full text-left text-sm text-gray-700 hover:text-gray-900 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                Download Certificate (First Completed)
+                className="w-full text-left text-sm text-gray-700 hover:text-gray-900 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors">
+                Download Certificate
               </button>
-              <button className="w-full text-left text-sm text-red-600 hover:text-red-700 py-2 px-3 rounded-lg hover:bg-red-50 transition-colors">
-                Delete Account
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="w-full text-left text-sm text-red-600 hover:text-red-700 py-2 px-3 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {deleting ? 'Deleting…' : 'Delete Account'}
               </button>
             </div>
           </div>

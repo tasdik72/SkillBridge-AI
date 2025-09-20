@@ -1,0 +1,3 @@
+-- This file is now deprecated as conversation system is integrated into main schema.sql
+-- The main schema.sql file now includes all conversation tables, functions, and policies
+-- This file can be removed after confirming the main schema works correctly
