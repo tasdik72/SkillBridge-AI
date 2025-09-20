@@ -31,7 +31,7 @@ SkillBridge AI is an innovative EduTech platform designed to empower youth aged 
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/your-username/skillbridge-ai.git
+    git clone https://github.com/tasdik72/skillbridge-ai.git
     cd skillbridge-ai
     ```
 
@@ -58,6 +58,41 @@ SkillBridge AI is an innovative EduTech platform designed to empower youth aged 
     ```
 
     The application will be available at `http://localhost:5173`.
+
+## Database Setup
+
+This project uses Supabase for its backend, which includes a PostgreSQL database, authentication, and storage.
+
+### Setting up the Database
+
+1.  **Create a new Supabase project:**
+
+    - Go to [Supabase](https://supabase.com/) and create a new project.
+    - Once your project is created, navigate to the **SQL Editor**.
+
+2.  **Run the schema script:**
+
+    - Open the `schema.sql` file in this repository.
+    - Copy the entire contents of the file.
+    - Paste the SQL into the Supabase SQL Editor and click **Run**.
+
+    This will create all the necessary tables and set up row-level security policies.
+
+3.  **Set up database functions:**
+
+    - Open the `functions.sql` file.
+    - Copy the entire contents of the file.
+    - Paste the SQL into the Supabase SQL Editor and click **Run**.
+
+    This will create the database functions required for handling user signups, milestone updates, and other core application logic.
+
+### Environment Variables
+
+Once your database is set up, you'll need to get your project's API keys.
+
+1.  In your Supabase project, go to **Project Settings** > **API**.
+2.  Find your **Project URL** and **anon public key**.
+3.  Add these to your `.env` file as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
 ## Project Structure
 
